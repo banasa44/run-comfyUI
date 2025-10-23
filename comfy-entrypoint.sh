@@ -62,29 +62,32 @@ try_clone() {
 # ========================================================================
 # Start JupyterLab first (background) with optional token
 # ========================================================================
+# ---------- JUPYTER ----------
 echo "[$(date -Is)] Starting JupyterLab on 0.0.0.0:$JUPYTER_PORT" >&3
-JUPYTER_BIN=/opt/venv/bin/jupyter
 
+# venv binary + runtime dir writable (avoid silent startup failures)
+JUPYTER_BIN=/opt/venv/bin/jupyter
+export JUPYTER_RUNTIME_DIR="$WORKSPACE/.jupyter_runtime"
+mkdir -p "$JUPYTER_RUNTIME_DIR"
+
+JUPYTER_ARGS=(
+  lab
+  --ServerApp.ip=0.0.0.0
+  --ServerApp.port="$JUPYTER_PORT"
+  --ServerApp.root_dir="$WORKSPACE"
+  --ServerApp.allow_origin='*'
+  --ServerApp.allow_remote_access=true
+  --ServerApp.base_url=/
+)
+
+# optional token
 if [ -n "${JUPYTER_TOKEN:-}" ]; then
-  nohup "$JUPYTER_BIN" lab \
-    --ServerApp.ip=0.0.0.0 \
-    --ServerApp.port="$JUPYTER_PORT" \
-    --ServerApp.root_dir=/workspace \
-    --ServerApp.token="$JUPYTER_TOKEN" \
-    --ServerApp.allow_origin='*' \
-    --ServerApp.allow_remote_access=true \
-    >> "$LOG_DIR/jupyter.log" 2>&1 &
-else
-  nohup "$JUPYTER_BIN" lab \
-    --ServerApp.ip=0.0.0.0 \
-    --ServerApp.port="$JUPYTER_PORT" \
-    --ServerApp.root_dir=/workspace \
-    --ServerApp.allow_origin='*' \
-    --ServerApp.allow_remote_access=true \
-    >> "$LOG_DIR/jupyter.log" 2>&1 &
+  JUPYTER_ARGS+=( --ServerApp.token="$JUPYTER_TOKEN" )
 fi
 
-# Healthcheck: wait until Jupyter is actually listening (avoids RunPod 502)
+nohup "$JUPYTER_BIN" "${JUPYTER_ARGS[@]}" >> "$LOG_DIR/jupyter.log" 2>&1 &
+
+# healthcheck: wait until Jupyter listens (helps RunPod proxy avoid 502)
 for i in {1..30}; do
   if ss -lnt | grep -q ":$JUPYTER_PORT "; then
     echo "[$(date -Is)] Jupyter is listening on port $JUPYTER_PORT" >&3

@@ -28,6 +28,12 @@ RUN python -m pip install --no-cache-dir \
 RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab tqdm
 
+# --- Optional SageAttention (enable via build-arg) ---
+ARG ENABLE_SAGEATTENTION=false
+RUN if [ "$ENABLE_SAGEATTENTION" = "true" ]; then \
+      python -m pip install --no-cache-dir "sageattention==1.0.6" || true ; \
+    fi
+
 # ========= Runtime (CUDA 12.1 runtime) =========
 FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

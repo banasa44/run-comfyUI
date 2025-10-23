@@ -41,6 +41,12 @@ RUN python -m pip install --no-cache-dir \
 RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab tqdm
 
+# --- Optional SageAttention (enable via build-arg) ---
+ARG ENABLE_SAGEATTENTION=false
+RUN if [ "$ENABLE_SAGEATTENTION" = "true" ]; then \
+      python -m pip install --no-cache-dir "sageattention==1.0.6" || true ; \
+    fi
+
 # Create cache and log directories
 RUN mkdir -p /workspace/.cache/huggingface \
              /workspace/.cache/pip \
