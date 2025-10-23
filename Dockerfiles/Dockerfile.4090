@@ -26,7 +26,8 @@ RUN python -m pip install --no-cache-dir \
 
 # Install essential packages + JupyterLab
 RUN python -m pip install --no-cache-dir \
-    requests numpy pillow opencv-python-headless jupyterlab tqdm
+    requests numpy pillow opencv-python-headless jupyterlab tqdm \
+    safetensors aiohttp onnx imageio-ffmpeg
 
 # --- Optional SageAttention (enable via build-arg) ---
 ARG ENABLE_SAGEATTENTION=false
@@ -50,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git git-lfs curl ca-certificates ffmpeg \
     libgl1 libglib2.0-0 libsqlite3-0 \
     build-essential gcc g++ make python3.11-dev \
+    iproute2 rsync \
   && rm -rf /var/lib/apt/lists/*
 
 ENV CC=/usr/bin/gcc CXX=/usr/bin/g++

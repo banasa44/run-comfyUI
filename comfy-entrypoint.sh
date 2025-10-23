@@ -158,8 +158,11 @@ install_requirements_if_needed() {
   new_sum="$(sha256sum "$REQ_FILE" | awk '{print $1}')"
   if [ -f "$REQ_MARK" ]; then old_sum="$(cat "$REQ_MARK")"; else old_sum=""; fi
   if [ "$new_sum" != "$old_sum" ]; then
-    echo "[$(date -Is)] Installing ComfyUI requirements..." >&3
-    python -m pip install --no-cache-dir -r "$REQ_FILE"
+    echo "[$(date -Is)] Installing ComfyUI requirements (also to STDOUT)" >&3
+    python -m pip install --no-cache-dir -r "$REQ_FILE" | tee -a "$LOG_DIR/pip_install.log" || {
+      echo "[$(date -Is)] ERROR: pip install failed!" >&3
+      exit 1
+    }
     echo "$new_sum" > "$REQ_MARK"
   else
     echo "[$(date -Is)] Requirements unchanged; skipping install." >&3
