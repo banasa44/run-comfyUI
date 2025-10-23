@@ -35,7 +35,7 @@ RUN python -m pip install --no-cache-dir \
 
 # Install essential packages + JupyterLab
 RUN python -m pip install --no-cache-dir \
-    requests numpy pillow opencv-python-headless jupyterlab
+    requests numpy pillow opencv-python-headless jupyterlab tqdm
 
 # Create cache and log directories
 RUN mkdir -p /workspace/.cache/huggingface \
