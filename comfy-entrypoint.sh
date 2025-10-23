@@ -27,6 +27,7 @@ export GIT_TERMINAL_PROMPT=0
 # ========================================================================
 COMFYUI_BRANCH="${COMFYUI_BRANCH:-v0.3.66}"
 COMFYUI_AUTO_UPDATE="${COMFYUI_AUTO_UPDATE:-false}"
+COMFYUI_FORCE_REINSTALL="${COMFYUI_FORCE_REINSTALL:-false}"
 JUPYTER_TOKEN="${JUPYTER_TOKEN:-}"
 
 # ========================================================================
@@ -157,6 +158,13 @@ install_requirements_if_needed() {
   local new_sum old_sum
   new_sum="$(sha256sum "$REQ_FILE" | awk '{print $1}')"
   if [ -f "$REQ_MARK" ]; then old_sum="$(cat "$REQ_MARK")"; else old_sum=""; fi
+  
+  # Force reinstall if requested (useful for fixing broken volumes)
+  if [ "$COMFYUI_FORCE_REINSTALL" = "true" ]; then
+    echo "[$(date -Is)] COMFYUI_FORCE_REINSTALL=true - forcing requirements reinstall" >&3
+    old_sum=""
+  fi
+  
   if [ "$new_sum" != "$old_sum" ]; then
     echo "[$(date -Is)] Installing ComfyUI requirements (also to STDOUT)" >&3
     echo "[$(date -Is)] Using Python: $(which python) (version: $(python --version))" >&3
@@ -181,6 +189,16 @@ if [ -f "$REQ_FILE" ]; then
 else
   echo "[$(date -Is)] WARNING: $REQ_FILE not found; skipping core deps." >&3
 fi
+
+# ========================================================================
+# Verify critical dependencies (prevent RunPod startup failures)
+# ========================================================================
+echo "[$(date -Is)] Verifying Python environment..." >&3
+if ! python -c "import torch, torchvision; print(f'PyTorch {torch.__version__}')" 2>/dev/null; then
+  echo "[$(date -Is)] ERROR: PyTorch not found in venv!" >&3
+  exit 1
+fi
+echo "[$(date -Is)] Python environment OK" >&3
 
 # ========================================================================
 # Ensure ComfyUI directories
