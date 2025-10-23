@@ -1,5 +1,5 @@
-# ========= Builder (CUDA toolchain per compilar rodes si cal) =========
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
+# ========= Builder (CUDA 12.1 to avoid driver mismatch on RunPod) =========
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -11,48 +11,52 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 libsqlite3-0 \
   && rm -rf /var/lib/apt/lists/*
 
-# venv únic per tot el runtime Python
+# Create Python virtual environment
 ENV VENV_PATH=/opt/venv
 RUN python3.11 -m venv ${VENV_PATH}
 ENV PATH="${VENV_PATH}/bin:${PATH}"
 
-# pip bàsic
+# Upgrade pip/wheel
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# PyTorch cu126 (index oficial) + paquets bàsics
-RUN python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu126 \
+# Install PyTorch cu121 from official index
+RUN python -m pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cu121 \
     torch torchvision torchaudio
+
+# Install essential packages + JupyterLab
 RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab
 
-# ========= Runtime (slim, només runtime i el venv precompilat) =========
-FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04 AS runtime
+# ========= Runtime (CUDA 12.1 runtime) =========
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
-    RP_WORKSPACE=/workspace \
-    HF_HOME=/workspace/.cache/huggingface \
-    PIP_CACHE_DIR=/workspace/.cache/pip \
-    TORCH_HOME=/workspace/.cache/torch \
     COMFYUI_BRANCH=v0.3.66 \
     COMFYUI_AUTO_UPDATE=false \
-    COMFYUI_PORT=8188 \
-    COMFYUI_LOG_PATH=/workspace/logs/comfyui.log \
     PYTHONUNBUFFERED=1
 
-# Sistema mínim per clonar i executar
+# Install minimal system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
     git git-lfs curl ca-certificates ffmpeg \
     libgl1 libglib2.0-0 libsqlite3-0 \
   && rm -rf /var/lib/apt/lists/*
 
-# Copiem el venv (inclou el binari de python i rodes ja resoltes)
+# Initialize git-lfs
+RUN git lfs install
+
+# Copy precompiled venv from builder
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 
-# Caches i logs en volum persistent
-RUN mkdir -p /workspace/.cache/huggingface /workspace/.cache/pip /workspace/.cache/torch /workspace/logs
+# Create cache and log directories
+RUN mkdir -p /workspace/.cache/huggingface \
+             /workspace/.cache/pip \
+             /workspace/.cache/torch \
+             /workspace/logs
 
 # entrypoint com a fitxer
 COPY --chmod=755 comfy-entrypoint.sh /usr/local/bin/comfy-entrypoint.sh

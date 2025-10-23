@@ -1,78 +1,194 @@
-# ComfyUI Docker Images
+# ComfyUI Docker Images for RunPod
 
-This repository contains Docker configurations for running ComfyUI with different GPU configurations.
+Hardened Docker images for running ComfyUI on RunPod with optimal GPU support, pre-installed custom nodes, and JupyterLab for development.
 
-## Available Images
+## 🚀 Available Images
 
-- **4090**: Optimized for RTX 4090 GPUs (CUDA 12.6.0)
-- **5090**: Optimized for RTX 5090 GPUs (CUDA 12.8.0)
+| Tag                           | GPU      | CUDA | PyTorch | Description                             |
+| ----------------------------- | -------- | ---- | ------- | --------------------------------------- |
+| `banasa44/comfyui:4090`       | RTX 4090 | 12.1 | cu121   | Multi-stage build, optimized for RunPod |
+| `banasa44/comfyui:5090`       | RTX 5090 | 12.8 | cu128   | Single-stage build, default             |
+| `banasa44/comfyui:5090-cu126` | RTX 5090 | 12.8 | cu126   | Fallback for compatibility              |
 
-## Docker Hub Images
+## 📦 What's Included
 
-The images are automatically built and published to Docker Hub via GitHub Actions:
+### Pre-installed Custom Nodes
 
-- `banasa44/comfyui:4090`
-- `banasa44/comfyui:5090`
+- **ComfyUI-Manager** - Node package manager
+- **comfyui_controlnet_aux** - ControlNet auxiliary preprocessors
+- **ComfyUI-Impact-Pack** - Advanced workflow tools
+- **ComfyUI-Impact-Subpack** - Additional Impact Pack components
 
-## Environment Variables
+### Services
 
-Copy `.env.example` to `.env` and modify as needed:
+- **ComfyUI** - Main application on port `8188`
+- **JupyterLab** - Development environment on port `8888` (token-free)
+
+### Hardcoded Paths (Not Configurable)
 
 ```bash
-cp .env.example .env
+WORKSPACE=/workspace
+COMFY_DIR=/workspace/ComfyUI
+HF_HOME=/workspace/.cache/huggingface
+TORCH_HOME=/workspace/.cache/torch
+PIP_CACHE_DIR=/workspace/.cache/pip
+LOG_DIR=/workspace/logs
 ```
 
-Key variables:
+## 🎯 RunPod Template Configuration
 
-- `COMFYUI_BRANCH`: ComfyUI version/branch to use
-- `COMFYUI_PORT`: Port to expose ComfyUI on
-- `COMFYUI_AUTO_UPDATE`: Whether to auto-update ComfyUI on startup
+### Environment Variables
 
-## Usage
+Only two environment variables are supported:
 
 ```bash
-# For RTX 4090
-docker run --gpus all -p 8188:8188 banasa44/comfyui:4090
-
-# For RTX 5090
-docker run --gpus all -p 8188:8188 banasa44/comfyui:5090
+COMFYUI_BRANCH=v0.3.66          # ComfyUI version/branch
+COMFYUI_AUTO_UPDATE=false       # Auto-update on container start
 ```
 
-## Building Locally
+### Port Mappings
+
+- **8188** → ComfyUI web interface
+- **8888** → JupyterLab (opens first, no token required)
+
+### Volume Mount
+
+- **Container Path**: `/workspace`
+- **Minimum Size**: 50GB recommended
+
+### Start Command
 
 ```bash
-# Build 4090 image
+/usr/local/bin/comfy-entrypoint.sh
+```
+
+## 🐳 Docker Usage
+
+### Quick Start
+
+```bash
+# RTX 4090 (CUDA 12.1)
+docker run --gpus all -p 8188:8188 -p 8888:8888 -v $(pwd)/workspace:/workspace banasa44/comfyui:4090
+
+# RTX 5090 (CUDA 12.8)
+docker run --gpus all -p 8188:8188 -p 8888:8888 -v $(pwd)/workspace:/workspace banasa44/comfyui:5090
+
+# RTX 5090 (CUDA 12.6 fallback)
+docker run --gpus all -p 8188:8188 -p 8888:8888 -v $(pwd)/workspace:/workspace banasa44/comfyui:5090-cu126
+```
+
+### With Custom Settings
+
+```bash
+docker run --gpus all \
+  -p 8188:8188 -p 8888:8888 \
+  -v $(pwd)/workspace:/workspace \
+  -e COMFYUI_BRANCH=main \
+  -e COMFYUI_AUTO_UPDATE=true \
+  banasa44/comfyui:4090
+```
+
+## 🔨 Building Locally
+
+### RTX 4090 (CUDA 12.1, Multi-stage)
+
+```bash
 docker build -f Dockerfiles/Dockerfile.4090 -t comfyui:4090 .
-
-# Build 5090 image
-docker build -f Dockerfiles/Dockerfile.5090 -t comfyui:5090 .
 ```
 
-## GitHub Actions
+### RTX 5090 (CUDA 12.8, Single-stage)
 
-The repository includes a GitHub Actions workflow that automatically builds and publishes Docker images to Docker Hub when:
+```bash
+# Default cu128
+docker build -f Dockerfiles/Dockerfile.5090 -t comfyui:5090 .
 
-- Code is pushed to the main branch
-- Workflow is manually triggered
+# With cu126 fallback
+docker build -f Dockerfiles/Dockerfile.5090 \
+  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126 \
+  -t comfyui:5090-cu126 .
+```
 
-The workflow builds both GPU variants in parallel and tags them appropriately.
+## 📋 Logs
 
-### Setup GitHub Secrets
+All logs are written to `/workspace/logs/`:
 
-To enable automatic publishing to Docker Hub, you need to set up the following GitHub repository secret:
+- `entrypoint.log` - Startup and initialization logs
+- `jupyter.log` - JupyterLab output
 
-1. Go to your GitHub repository
-2. Navigate to Settings → Secrets and variables → Actions
-3. Add the following repository secret:
+View logs from inside the container:
+
+```bash
+docker exec -it <container_id> tail -f /workspace/logs/entrypoint.log
+```
+
+## 🔄 Startup Sequence
+
+1. **Logging initialized** → `/workspace/logs/entrypoint.log`
+2. **JupyterLab starts** → Background process on port 8888
+3. **ComfyUI cloned/updated** → `/workspace/ComfyUI` (if missing or auto-update enabled)
+4. **Custom nodes bootstrapped** → Only if missing or auto-update enabled
+5. **Requirements installed** → For each node with `requirements.txt`
+6. **ComfyUI starts** → Foreground process on port 8188
+
+## 🛠️ Troubleshooting
+
+### CUDA Driver Mismatch (4090)
+
+If you see driver errors on RTX 4090, the image uses CUDA 12.1 to avoid RunPod driver compatibility issues.
+
+### Disk Space Issues (5090)
+
+The 5090 image uses a single-stage build to prevent "no space left on device" errors during GitHub Actions builds.
+
+### Custom Nodes
+
+Additional nodes can be installed via ComfyUI-Manager UI or by git cloning into `/workspace/ComfyUI/custom_nodes/`.
+
+### JupyterLab Access
+
+JupyterLab is configured with no token/password for convenience. Access at `http://<host>:8888`.
+
+## 🤖 GitHub Actions
+
+Images are automatically built and pushed to Docker Hub on every push to `main` or manual workflow dispatch.
+
+### Build Matrix
+
+- `4090` - CUDA 12.1 multi-stage
+- `5090` - CUDA 12.8 single-stage (default)
+- `5090-cu126` - CUDA 12.8 single-stage (cu126 PyTorch)
+
+### Features
+
+- **Disk space cleanup** - Removes Android SDK, .NET, GHC before build
+- **BuildX cache** - Uses GitHub Actions cache for faster rebuilds
+- **Fallback tags** - Provides cu126 option for compatibility
+
+### Setup Requirements
+
+1. Go to repository **Settings** → **Secrets and variables** → **Actions**
+2. Add secret:
    - **Name**: `DOCKERHUB_TOKEN`
-   - **Value**: `[Your Docker Hub Personal Access Token]`
+   - **Value**: Your Docker Hub Personal Access Token
 
-To create a Docker Hub Personal Access Token:
+## 📝 Architecture Notes
 
-1. Log in to Docker Hub
-2. Go to Account Settings → Security
-3. Click "New Access Token"
-4. Give it a descriptive name and copy the token
-5. Use this token as the value for the `DOCKERHUB_TOKEN` secret
+### Why CUDA 12.1 for 4090?
 
-The Docker Hub username (`banasa44`) is already configured in the workflow as an environment variable.
+RunPod GPU pools often have older drivers that don't support CUDA 12.6+. CUDA 12.1 provides maximum compatibility.
+
+### Why Single-stage for 5090?
+
+GitHub Actions runners have limited disk space. Multi-stage builds for 5090 were hitting "no space left on device" errors during the `COPY --from=builder` step.
+
+### Why Hardcoded Paths?
+
+Reduces configuration complexity and ensures consistent behavior across deployments. All data persists in `/workspace` which is mounted as a volume.
+
+### Why Bootstrap Nodes?
+
+Ensures a working ComfyUI setup on first boot without requiring manual node installation. Users can still add more nodes via ComfyUI-Manager.
+
+## 📄 License
+
+MIT License - Feel free to modify and use as needed.

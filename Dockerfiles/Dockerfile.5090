@@ -1,57 +1,49 @@
-# ========= Builder =========
-FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS builder
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=Etc/UTC
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-dev python-is-python3 \
-    git git-lfs curl ca-certificates build-essential ffmpeg \
-    libgl1 libglib2.0-0 libsqlite3-0 \
-  && rm -rf /var/lib/apt/lists/*
-
-ENV VENV_PATH=/opt/venv
-RUN python3.11 -m venv ${VENV_PATH}
-ENV PATH="${VENV_PATH}/bin:${PATH}"
-
-RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# PyTorch cu128 (index oficial). Si no hi ha rodes per la teva combinació,
-# canvia a cu126 fàcilment (substitueix l'index-url).
-ARG TORCH_INDEX_URL="https://download.pytorch.org/whl/cu128"
-RUN python -m pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} \
-    torch torchvision torchaudio
-RUN python -m pip install --no-cache-dir \
-    requests numpy pillow opencv-python-headless jupyterlab
-
-# ========= Runtime =========
-FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime
+# ========= Single-stage build (avoids disk space issues on GitHub Actions) =========
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
-    RP_WORKSPACE=/workspace \
-    HF_HOME=/workspace/.cache/huggingface \
-    PIP_CACHE_DIR=/workspace/.cache/pip \
-    TORCH_HOME=/workspace/.cache/torch \
     COMFYUI_BRANCH=v0.3.66 \
     COMFYUI_AUTO_UPDATE=false \
-    COMFYUI_PORT=8188 \
-    COMFYUI_LOG_PATH=/workspace/logs/comfyui.log \
     PYTHONUNBUFFERED=1
 
+# Install system packages including Python 3.11
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python-is-python3 \
     git git-lfs curl ca-certificates ffmpeg \
     libgl1 libglib2.0-0 libsqlite3-0 \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:${PATH}"
+# Initialize git-lfs
+RUN git lfs install
 
-RUN mkdir -p /workspace/.cache/huggingface /workspace/.cache/pip /workspace/.cache/torch /workspace/logs
+# Create and activate virtual environment
+ENV VENV_PATH=/opt/venv
+RUN python3.11 -m venv ${VENV_PATH}
+ENV PATH="${VENV_PATH}/bin:${PATH}"
 
-# entrypoint com a fitxer
+# Upgrade pip/wheel
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install PyTorch with ARG for flexible CUDA version
+# Default: cu128, can override with --build-arg TORCH_INDEX_URL=...
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
+RUN python -m pip install --no-cache-dir \
+    --index-url ${TORCH_INDEX_URL} \
+    torch torchvision torchaudio
+
+# Install essential packages + JupyterLab
+RUN python -m pip install --no-cache-dir \
+    requests numpy pillow opencv-python-headless jupyterlab
+
+# Create cache and log directories
+RUN mkdir -p /workspace/.cache/huggingface \
+             /workspace/.cache/pip \
+             /workspace/.cache/torch \
+             /workspace/logs
+
+# Copy entrypoint script
 COPY --chmod=755 comfy-entrypoint.sh /usr/local/bin/comfy-entrypoint.sh
 
 EXPOSE 8188 8888
