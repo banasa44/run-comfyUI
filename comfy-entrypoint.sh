@@ -38,6 +38,8 @@ echo "[$(date -Is)] ============================================" >&3
 echo "[$(date -Is)] ENTRYPOINT START" >&3
 echo "[$(date -Is)] COMFYUI_BRANCH=$COMFYUI_BRANCH" >&3
 echo "[$(date -Is)] COMFYUI_AUTO_UPDATE=$COMFYUI_AUTO_UPDATE" >&3
+echo "[$(date -Is)] Python: $(which python)  Pip: $(which pip)" >&3
+git lfs install || true
 echo "[$(date -Is)] ============================================" >&3
 
 # ========================================================================
@@ -61,22 +63,69 @@ try_clone() {
 # Start JupyterLab first (background) with optional token
 # ========================================================================
 echo "[$(date -Is)] Starting JupyterLab on 0.0.0.0:$JUPYTER_PORT" >&3
-if [ -n "$JUPYTER_TOKEN" ]; then
-  echo "[$(date -Is)] Using custom Jupyter token" >&3
-  nohup jupyter lab --ip=0.0.0.0 --port=$JUPYTER_PORT --no-browser \
+JUPYTER_BIN=/opt/venv/bin/jupyter
+
+if [ -n "${JUPYTER_TOKEN:-}" ]; then
+  nohup "$JUPYTER_BIN" lab \
+    --ServerApp.ip=0.0.0.0 \
+    --ServerApp.port="$JUPYTER_PORT" \
     --ServerApp.root_dir=/workspace \
     --ServerApp.token="$JUPYTER_TOKEN" \
     --ServerApp.allow_origin='*' \
     --ServerApp.allow_remote_access=true \
     >> "$LOG_DIR/jupyter.log" 2>&1 &
 else
-  echo "[$(date -Is)] Using auto-generated Jupyter token (check jupyter.log)" >&3
-  nohup jupyter lab --ip=0.0.0.0 --port=$JUPYTER_PORT --no-browser \
+  nohup "$JUPYTER_BIN" lab \
+    --ServerApp.ip=0.0.0.0 \
+    --ServerApp.port="$JUPYTER_PORT" \
     --ServerApp.root_dir=/workspace \
     --ServerApp.allow_origin='*' \
     --ServerApp.allow_remote_access=true \
     >> "$LOG_DIR/jupyter.log" 2>&1 &
 fi
+
+# Healthcheck: wait until Jupyter is actually listening (avoids RunPod 502)
+for i in {1..30}; do
+  if ss -lnt | grep -q ":$JUPYTER_PORT "; then
+    echo "[$(date -Is)] Jupyter is listening on port $JUPYTER_PORT" >&3
+    break
+  fi
+  sleep 1
+done
+
+# ========================================================================
+# Adopt existing ComfyUI state from volume (case/legacy paths)
+# ========================================================================
+adopt_existing_state() {
+  # If target is a non-git directory (bad state), wipe and adopt later
+  if [ -d "$COMFY_DIR" ] && [ ! -d "$COMFY_DIR/.git" ] && [ -z "$(ls -A "$COMFY_DIR" 2>/dev/null)" ]; then
+    rm -rf "$COMFY_DIR"
+  fi
+
+  if [ ! -d "$COMFY_DIR" ]; then
+    # Look for likely candidates (ignore our target)
+    local cand
+    cand="$(find /workspace -maxdepth 2 -type d -iname 'comfyui' ! -path "$COMFY_DIR" 2>/dev/null | head -n1)"
+    if [ -n "$cand" ]; then
+      echo "[$(date -Is)] Adopting existing ComfyUI from: $cand" >&3
+      mkdir -p "$(dirname "$COMFY_DIR")"
+      # Prefer moving to keep inode history; fallback to rsync if cross-device
+      mv "$cand" "$COMFY_DIR" 2>/dev/null || rsync -a "$cand"/ "$COMFY_DIR"/
+    fi
+  fi
+
+  # If Manager exists elsewhere, copy it in
+  if [ ! -d "$COMFY_DIR/custom_nodes/ComfyUI-Manager" ]; then
+    local mgr
+    mgr="$(find /workspace -maxdepth 3 -type d -name 'ComfyUI-Manager' 2>/dev/null | head -n1)"
+    if [ -n "$mgr" ]; then
+      echo "[$(date -Is)] Importing existing ComfyUI-Manager from: $mgr" >&3
+      mkdir -p "$COMFY_DIR/custom_nodes"
+      rsync -a "$mgr"/ "$COMFY_DIR/custom_nodes/ComfyUI-Manager"/
+    fi
+  fi
+}
+adopt_existing_state
 
 # ========================================================================
 # Ensure ComfyUI repository
@@ -113,7 +162,12 @@ install_requirements_if_needed() {
     echo "[$(date -Is)] Requirements unchanged; skipping install." >&3
   fi
 }
-install_requirements_if_needed
+
+if [ -f "$REQ_FILE" ]; then
+  install_requirements_if_needed
+else
+  echo "[$(date -Is)] WARNING: $REQ_FILE not found; skipping core deps." >&3
+fi
 
 # ========================================================================
 # Ensure ComfyUI directories

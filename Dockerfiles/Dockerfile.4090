@@ -40,13 +40,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install minimal system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
+    python3.11 python3-pip \
     git git-lfs curl ca-certificates ffmpeg \
     libgl1 libglib2.0-0 libsqlite3-0 \
   && rm -rf /var/lib/apt/lists/*
 
 # Initialize git-lfs
 RUN git lfs install
+
+# Install uv for ComfyUI Manager compatibility
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -sf /root/.local/bin/uv /usr/local/bin/uv || true
 
 # Copy precompiled venv from builder
 COPY --from=builder /opt/venv /opt/venv

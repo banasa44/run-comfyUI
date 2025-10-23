@@ -35,6 +35,8 @@ PIP_CACHE_DIR=/workspace/.cache/pip
 LOG_DIR=/workspace/logs
 ```
 
+**Note:** If you already have ComfyUI on your `/workspace` volume (e.g., under a different case or path like `/workspace/comfyUI`), the entrypoint will automatically adopt it and move it to `/workspace/ComfyUI`. If ComfyUI-Manager exists elsewhere on the volume, it will be imported into the custom_nodes directory.
+
 ## 🎯 RunPod Template Configuration
 
 ### Environment Variables
@@ -44,6 +46,7 @@ Only two environment variables are supported:
 ```bash
 COMFYUI_BRANCH=v0.3.66          # ComfyUI version/branch
 COMFYUI_AUTO_UPDATE=false       # Auto-update on container start
+JUPYTER_TOKEN=                  # Optional: custom Jupyter token (auto-generated if omitted)
 ```
 
 ### Port Mappings
