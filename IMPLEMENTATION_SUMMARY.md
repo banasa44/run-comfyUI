@@ -53,7 +53,6 @@
   - 4090 (cu121)
   - 5090 (cu128, default)
   - 5090-cu126 (cu126, fallback)
-- ✅ Added -latest suffix to all tags
 - ✅ Fixed username reference to use env variable
 
 ### 5. .env.example - Minimized

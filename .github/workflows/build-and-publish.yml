@@ -49,7 +49,6 @@ jobs:
           push: true
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ matrix.target.tag }}
-            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ matrix.target.tag }}-latest
           build-args: ${{ matrix.target.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
