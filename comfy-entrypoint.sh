@@ -159,11 +159,18 @@ install_requirements_if_needed() {
   if [ -f "$REQ_MARK" ]; then old_sum="$(cat "$REQ_MARK")"; else old_sum=""; fi
   if [ "$new_sum" != "$old_sum" ]; then
     echo "[$(date -Is)] Installing ComfyUI requirements (also to STDOUT)" >&3
-    python -m pip install --no-cache-dir -r "$REQ_FILE" | tee -a "$LOG_DIR/pip_install.log" || {
-      echo "[$(date -Is)] ERROR: pip install failed!" >&3
+    echo "[$(date -Is)] Using Python: $(which python) (version: $(python --version))" >&3
+    echo "[$(date -Is)] Using Pip: $(which pip) (version: $(pip --version))" >&3
+    
+    if ! python -m pip install --no-cache-dir -r "$REQ_FILE" 2>&1 | tee -a "$LOG_DIR/pip_install.log"; then
+      echo "[$(date -Is)] ERROR: pip install failed! Check $LOG_DIR/pip_install.log" >&3
+      echo "[$(date -Is)] Attempting to show last 20 lines of error:" >&3
+      tail -n 20 "$LOG_DIR/pip_install.log" >&3
       exit 1
-    }
+    fi
+    
     echo "$new_sum" > "$REQ_MARK"
+    echo "[$(date -Is)] Requirements installed successfully" >&3
   else
     echo "[$(date -Is)] Requirements unchanged; skipping install." >&3
   fi

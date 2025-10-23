@@ -46,6 +46,11 @@ RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab tqdm \
     safetensors aiohttp onnx imageio-ffmpeg
 
+# Install ComfyUI critical dependencies (avoid runtime failures)
+RUN python -m pip install --no-cache-dir \
+    einops huggingface_hub transformers sentencepiece protobuf \
+    kornia spandrel soundfile
+
 # --- Optional SageAttention (enable via build-arg) ---
 ARG ENABLE_SAGEATTENTION=false
 RUN if [ "$ENABLE_SAGEATTENTION" = "true" ]; then \
