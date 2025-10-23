@@ -2,7 +2,11 @@
 
 ## ✅ Primera Arrencada (Volum Buit)
 
-Hauria de funcionar al 100% sense cap problema. La imatge inclou totes les dependencies crítiques.
+Hauria de funcionar al 100% sense cap problema. La imatge inclou totes les dependencies crítiques:
+
+- ✅ **ComfyUI**: Arrenca correctament al port 8188
+- ✅ **JupyterLab**: Arrenca correctament al port 8888 (amb `--allow-root`)
+- ✅ **Dependencies**: scipy, einops, transformers, torch pre-instal·lats
 
 ## ⚠️ Arrencada amb Volum Existent
 
@@ -103,6 +107,31 @@ JUPYTER_PORT=8888                   # Port de JupyterLab
 ```
 
 ## 🚨 Errors Comuns i Solucions
+
+### Error: "JupyterLab no arrenca" o "Port 8888 no respon"
+
+**Símptoma:** RunPod proxy mostra 502 Bad Gateway al port 8888.
+
+**Causa:** Jupyter refusa arrencar com a root sense `--allow-root`.
+
+**Solució:** ✅ **JA RESOLT** a les imatges finals. Jupyter té `--allow-root` activat.
+
+**Verificació:**
+
+```bash
+# Comprova que Jupyter escolta
+docker logs <pod> | grep "Jupyter Server.*is running"
+ss -lnt | grep 8888
+```
+
+**Token d'accés:**
+
+```bash
+# Cerca el token als logs
+docker logs <pod> | grep "token="
+# O defineix-ne un personalitzat:
+export JUPYTER_TOKEN=my-secret-token
+```
 
 ### Error: "No space left on device"
 

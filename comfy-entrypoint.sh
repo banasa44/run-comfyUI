@@ -79,6 +79,7 @@ JUPYTER_ARGS=(
   --ServerApp.allow_origin='*'
   --ServerApp.allow_remote_access=true
   --ServerApp.base_url=/
+  --allow-root
 )
 
 # optional token

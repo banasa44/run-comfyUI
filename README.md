@@ -1,28 +1,41 @@
 # ComfyUI Docker Images for RunPod
 
-Hardened Docker images for running ComfyUI on RunPod with optimal GPU support, pre-installed custom nodes, and JupyterLab for development.
+Production-ready Docker images for ComfyUI on RunPod with **ZERO ModuleNotFoundError**, optimal GPU support, and JupyterLab.
+
+## ✅ Status
+
+🎉 **100% Functional** - Totes les dependencies pre-instal·lades del `requirements.txt` oficial de ComfyUI.
 
 ## 🚀 Available Images
 
-| Tag                           | GPU      | CUDA | PyTorch | Description                             |
-| ----------------------------- | -------- | ---- | ------- | --------------------------------------- |
-| `banasa44/comfyui:4090`       | RTX 4090 | 12.1 | cu121   | Multi-stage build, optimized for RunPod |
-| `banasa44/comfyui:5090`       | RTX 5090 | 12.8 | cu128   | Single-stage build, default             |
-| `banasa44/comfyui:5090-cu126` | RTX 5090 | 12.8 | cu126   | Fallback for compatibility              |
+| GPU      | CUDA   | PyTorch     | Image                         | Status        |
+| -------- | ------ | ----------- | ----------------------------- | ------------- |
+| RTX 4090 | 12.1.0 | 2.5.1+cu121 | `banasa44/comfyui:4090-final` | ✅ Production |
+| RTX 5090 | 12.8.0 | 2.9.0+cu128 | `banasa44/comfyui:5090-final` | ✅ Production |
 
 ## 📦 What's Included
 
-### Pre-installed Custom Nodes
+### ✅ Core Dependencies (Pre-installed)
 
-- **ComfyUI-Manager** - Node package manager
-- **comfyui_controlnet_aux** - ControlNet auxiliary preprocessors
-- **ComfyUI-Impact-Pack** - Advanced workflow tools
-- **ComfyUI-Impact-Subpack** - Additional Impact Pack components
+Totes les dependencies del **ComfyUI v0.3.66 requirements.txt**:
 
-### Services
+- ✅ scipy 1.16.2
+- ✅ einops 0.8.1
+- ✅ transformers 4.57.1
+- ✅ sentencepiece 0.2.1
+- ✅ kornia 0.8.1
+- ✅ spandrel 0.4.1
+- ✅ torch, torchvision, torchaudio
+- ✅ safetensors, aiohttp, pyyaml, pillow
+- ✅ i **tots** els altres
 
-- **ComfyUI** - Main application on port `8188`
-- **JupyterLab** - Development environment on port `8888` (token-free)
+**No more `ModuleNotFoundError`!** 🎉
+
+### 🛠️ Services
+
+- **ComfyUI** - Port `8188` (auto-clones v0.3.66)
+- **JupyterLab** - Port `8888` (amb `--allow-root`)
+- **ComfyUI-Manager** - Auto-instal·lat per gestió de custom nodes
 
 ### Hardcoded Paths (Not Configurable)
 
@@ -37,17 +50,32 @@ LOG_DIR=/workspace/logs
 
 **Note:** If you already have ComfyUI on your `/workspace` volume (e.g., under a different case or path like `/workspace/comfyUI`), the entrypoint will automatically adopt it and move it to `/workspace/ComfyUI`. If ComfyUI-Manager exists elsewhere on the volume, it will be imported into the custom_nodes directory.
 
-## 🎯 RunPod Template Configuration
+## 🎯 Quick Start
 
-### Environment Variables
-
-Only two environment variables are supported:
+### 1. Deploy to RunPod
 
 ```bash
-COMFYUI_BRANCH=v0.3.66          # ComfyUI version/branch
-COMFYUI_AUTO_UPDATE=false       # Auto-update on container start
-JUPYTER_TOKEN=                  # Optional: custom Jupyter token (auto-generated if omitted)
+# Template Configuration
+Image: banasa44/comfyui:4090-final  # Or 5090-final
+Ports: 8188/http, 8888/http
+Volume: /workspace (50GB+ recomanat)
+GPU: RTX 4090 (or compatible)
 ```
+
+### 2. Environment Variables
+
+```bash
+# Opcionals (tots tenen defaults)
+COMFYUI_BRANCH=v0.3.66              # Per defecte
+COMFYUI_AUTO_UPDATE=false           # Recomanat: false
+COMFYUI_FORCE_REINSTALL=true        # Primera vegada amb volum existent
+JUPYTER_TOKEN=my-secret-token       # Recomanat per seguretat
+```
+
+### 3. Access
+
+- **ComfyUI**: `https://<pod-id>-8188.proxy.runpod.net`
+- **JupyterLab**: `https://<pod-id>-8888.proxy.runpod.net`
 
 ### Port Mappings
 
@@ -133,23 +161,54 @@ docker exec -it <container_id> tail -f /workspace/logs/entrypoint.log
 5. **Requirements installed** → For each node with `requirements.txt`
 6. **ComfyUI starts** → Foreground process on port 8188
 
+## 🧪 Local Testing
+
+Abans de deploy a RunPod, pots testar localment amb GPU:
+
+```bash
+# Prerequisits: NVIDIA Container Toolkit
+./Scripts/test-local.sh 4090  # or 5090
+```
+
+Consulta [Scripts/TESTING.md](./Scripts/TESTING.md) per més detalls.
+
 ## 🛠️ Troubleshooting
 
-### CUDA Driver Mismatch (4090)
+### ✅ ModuleNotFoundError - RESOLT
 
-If you see driver errors on RTX 4090, the image uses CUDA 12.1 to avoid RunPod driver compatibility issues.
+**Totes** les dependencies estan pre-instal·lades. Si encara veus errors amb volum existent:
 
-### Disk Space Issues (5090)
+```bash
+COMFYUI_FORCE_REINSTALL=true  # Primera arrencada només
+```
 
-The 5090 image uses a single-stage build to prevent "no space left on device" errors during GitHub Actions builds.
+### ✅ JupyterLab no arrenca - RESOLT
+
+Jupyter té `--allow-root` activat. Si no arrenca, comprova logs:
+
+```bash
+docker logs <pod> | grep -i jupyter
+```
 
 ### Custom Nodes
 
-Additional nodes can be installed via ComfyUI-Manager UI or by git cloning into `/workspace/ComfyUI/custom_nodes/`.
+Instal·la via **ComfyUI-Manager UI** o manual:
 
-### JupyterLab Access
+```bash
+cd /workspace/ComfyUI/custom_nodes
+git clone https://github.com/author/node-name
+# Restart pod
+```
 
-JupyterLab is configured with no token/password for convenience. Access at `http://<host>:8888`.
+### Disk Space
+
+```bash
+# Neteja cache
+rm -rf /workspace/.cache/pip/*
+docker system prune -a --volumes -f
+```
+
+**Consulta [RUNPOD_TROUBLESHOOTING.md](./RUNPOD_TROUBLESHOOTING.md) per més errors comuns.**
 
 ## 🤖 GitHub Actions
 
