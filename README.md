@@ -68,6 +68,7 @@ To enable automatic publishing to Docker Hub, you need to set up the following G
    - **Value**: `[Your Docker Hub Personal Access Token]`
 
 To create a Docker Hub Personal Access Token:
+
 1. Log in to Docker Hub
 2. Go to Account Settings → Security
 3. Click "New Access Token"

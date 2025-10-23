@@ -51,55 +51,8 @@ ENV PATH="/opt/venv/bin:${PATH}"
 
 RUN mkdir -p /workspace/.cache/huggingface /workspace/.cache/pip /workspace/.cache/torch /workspace/logs
 
-RUN bash -lc 'cat >/usr/local/bin/comfy-entrypoint.sh << "EOF"\n\
-#!/usr/bin/env bash\n\
-set -euo pipefail\n\
-export RP_WORKSPACE=\"${RP_WORKSPACE:-/workspace}\"\n\
-export HF_HOME=\"${HF_HOME:-$RP_WORKSPACE/.cache/huggingface}\"\n\
-export TORCH_HOME=\"${TORCH_HOME:-$RP_WORKSPACE/.cache/torch}\"\n\
-export PIP_CACHE_DIR=\"${PIP_CACHE_DIR:-$RP_WORKSPACE/.cache/pip}\"\n\
-export COMFYUI_BRANCH=\"${COMFYUI_BRANCH:-v0.3.66}\"\n\
-export COMFYUI_PORT=\"${COMFYUI_PORT:-8188}\"\n\
-export COMFYUI_AUTO_UPDATE=\"${COMFYUI_AUTO_UPDATE:-false}\"\n\
-COMFY_DIR=\"$RP_WORKSPACE/ComfyUI\"\n\
-LOG_DIR=\"$RP_WORKSPACE/logs\"; mkdir -p \"$LOG_DIR\"\n\
-exec 3>>\"$LOG_DIR/entrypoint.log\"\n\
-echo \"[$(date -Is)] ENTRYPOINT start (branch=$COMFYUI_BRANCH auto_update=$COMFYUI_AUTO_UPDATE)\" >&3\n\
-# 1) Clone/update ComfyUI\n\
-if [ ! -d \"$COMFY_DIR/.git\" ]; then\n\
-  echo \"[$(date -Is)] Cloning ComfyUI ($COMFYUI_BRANCH)\" >&3\n\
-  git clone --depth=1 --branch \"$COMFYUI_BRANCH\" https://github.com/comfyanonymous/ComfyUI.git \"$COMFY_DIR\"\n\
-else\n\
-  if [ \"$COMFYUI_AUTO_UPDATE\" = \"true\" ]; then\n\
-    echo \"[$(date -Is)] Updating ComfyUI\" >&3\n\
-    git -C \"$COMFY_DIR\" fetch --depth=1 origin \"$COMFYUI_BRANCH\" || true\n\
-    git -C \"$COMFY_DIR\" checkout \"$COMFYUI_BRANCH\" || true\n\
-    git -C \"$COMFY_DIR\" pull --ff-only || true\n\
-  fi\n\
-fi\n\
-# 2) Dirs interns\n\
-mkdir -p \"$COMFY_DIR/models\" \"$COMFY_DIR/input\" \"$COMFY_DIR/output\" \"$COMFY_DIR/custom_nodes\" \"$RP_WORKSPACE/.state\"\n\
-# 3) ComfyUI-Manager\n\
-MANAGER_DIR=\"$COMFY_DIR/custom_nodes/ComfyUI-Manager\"\n\
-if [ ! -d \"$MANAGER_DIR/.git\" ]; then\n\
-  echo \"[$(date -Is)] Installing ComfyUI-Manager\" >&3\n\
-  git clone --depth=1 https://github.com/ltdrdata/ComfyUI-Manager \"$MANAGER_DIR\"\n\
-  if [ -f \"$MANAGER_DIR/requirements.txt\" ] && [ ! -f \"$MANAGER_DIR/.installed\" ]; then\n\
-    python -m pip install --no-cache-dir -r \"$MANAGER_DIR/requirements.txt\" && touch \"$MANAGER_DIR/.installed\"\n\
-  fi\n\
-else\n\
-  if [ \"$COMFYUI_AUTO_UPDATE\" = \"true\" ]; then\n\
-    echo \"[$(date -Is)] Updating ComfyUI-Manager\" >&3\n\
-    git -C \"$MANAGER_DIR\" pull --ff-only || true\n\
-  fi\n\
-fi\n\
-# 4) Launch ComfyUI\n\
-cd \"$COMFY_DIR\"\n\
-echo \"[$(date -Is)] Starting ComfyUI on 0.0.0.0:$COMFYUI_PORT\" >&3\n\
-exec python main.py --listen 0.0.0.0 --port \"$COMFYUI_PORT\" --enable-cors-header \\\n\
-  --output-directory \"$COMFY_DIR/output\" --input-directory \"$COMFY_DIR/input\"\n\
-EOF\n\
-chmod +x /usr/local/bin/comfy-entrypoint.sh'
+# entrypoint com a fitxer
+COPY --chmod=755 comfy-entrypoint.sh /usr/local/bin/comfy-entrypoint.sh
 
 EXPOSE 8188 8888
 WORKDIR /workspace
