@@ -13,7 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 python3.11-venv python3.11-dev python-is-python3 python3-pip \
     git git-lfs curl ca-certificates ffmpeg \
     libgl1 libglib2.0-0 libsqlite3-0 \
+    build-essential gcc g++ make \
   && rm -rf /var/lib/apt/lists/*
+
+ENV CC=/usr/bin/gcc CXX=/usr/bin/g++
 
 # Initialize git-lfs
 RUN git lfs install
