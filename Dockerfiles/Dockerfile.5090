@@ -62,11 +62,8 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt && \
     mkdir -p /ComfyUI/pysssss-workflows
 
-# --- Optional SageAttention (enable via build-arg) ---
-ARG ENABLE_SAGEATTENTION=false
-RUN if [ "$ENABLE_SAGEATTENTION" = "true" ]; then \
-      python -m pip install --no-cache-dir "sageattention==1.0.6" || true ; \
-    fi
+# Install SageAttention for improved performance
+RUN python -m pip install --no-cache-dir "sageattention==1.0.6" || true
 
 # Pre-install only essential custom nodes (rest can be installed via ComfyUI-Manager)
 RUN set -eux; cd /ComfyUI/custom_nodes; \
@@ -82,6 +79,12 @@ RUN mkdir -p /workspace/.cache/huggingface \
              /workspace/.cache/pip \
              /workspace/.cache/torch \
              /workspace/logs
+
+# Configure bash as default shell for better terminal experience
+ENV SHELL=/bin/bash
+RUN echo 'export PS1="\[\e[32m\]\u@\h\[\e[0m\]:\[\e[34m\]\w\[\e[0m\]\$ "' >> /root/.bashrc && \
+    echo 'alias ll="ls -lah"' >> /root/.bashrc && \
+    echo 'alias python=python3' >> /root/.bashrc
 
 # Copy entrypoint script
 COPY --chmod=755 comfy-entrypoint.sh /usr/local/bin/comfy-entrypoint.sh

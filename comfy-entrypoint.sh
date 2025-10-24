@@ -114,6 +114,9 @@ fi
 # ========================================================================
 echo "[$(date -Is)] Starting JupyterLab on port 8888" >&3
 
+# Configure JupyterLab to use bash with better terminal experience
+export SHELL=/bin/bash
+
 JUPYTER_ARGS=(
   lab
   --ip=0.0.0.0
@@ -122,17 +125,21 @@ JUPYTER_ARGS=(
   --allow-root
   --NotebookApp.allow_origin='*'
   --ServerApp.root_dir="$WORKSPACE"
+  --ServerApp.terminado_settings="shell_command=['/bin/bash']"
 )
 
-# Optional token
+# Token configuration: use env var if provided, otherwise disable token
 if [ -n "${JUPYTER_TOKEN:-}" ]; then
   JUPYTER_ARGS+=( --NotebookApp.token="$JUPYTER_TOKEN" )
+  echo "[$(date -Is)] JupyterLab will use custom token" >&3
 else
-  echo "[$(date -Is)] WARNING: No JUPYTER_TOKEN set, using default token" >&3
+  # Disable token authentication for easier access
+  JUPYTER_ARGS+=( --NotebookApp.token='' --NotebookApp.password='' )
+  echo "[$(date -Is)] JupyterLab started WITHOUT authentication (no token)" >&3
 fi
 
 jupyter "${JUPYTER_ARGS[@]}" >> "$LOG_DIR/jupyter.log" 2>&1 &
-echo "[$(date -Is)] JupyterLab started (logs: $LOG_DIR/jupyter.log)" >&3
+echo "[$(date -Is)] JupyterLab logs: $LOG_DIR/jupyter.log" >&3
 
 # ========================================================================
 # Execute user customization script
