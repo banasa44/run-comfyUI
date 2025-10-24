@@ -55,7 +55,61 @@ cd /workspace/ComfyUI/custom_nodes
 mv NomDelNodeProblematic /workspace/disabled_nodes/
 ```
 
-### Problema 3: Jupyter no arrenca
+### Problema 3: Workflow es para al mig (sense error a UI)
+
+**Símptoma:** El workflow comença, veus `got prompt`, però després s'atura. El container es reinicia automàticament.
+
+**Causa més comuna:** **Out of Memory (OOM)** - El model està intentant carregar més VRAM del disponible.
+
+**Com detectar-ho:**
+
+```bash
+# Comprova logs abans del restart
+docker logs <pod-id> | grep -E "(Sampling|OOM|CUDA|killed)"
+
+# Comprova GPU memory
+nvidia-smi
+
+# Busca el punt exacte on es para
+docker logs <pod-id> | tail -100
+```
+
+**Solucions:**
+
+1. **Reduir resolució del workflow:**
+   - 704x704 → 512x512 o menys
+   - Menys frames (121 → 60)
+2. **Afegir variables d'entorn a RunPod:**
+
+   ```bash
+   PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+   CUDA_LAUNCH_BLOCKING=1  # Debug mode (més lent però estable)
+   ```
+
+3. **Canviar VRAM mode al workflow:**
+
+   - Busca nodes amb opció `vram` o `memory`
+   - Canvia de `auto` a `lowvram` o `cpu`
+
+4. **Reiniciar pod abans de workflow gran:**
+   ```bash
+   # SSH al pod
+   docker restart <container-id>
+   # O des de RunPod UI: Stop → Start
+   ```
+
+**Exemple de log quan es para:**
+
+```
+Sampling 121 frames at 704x704 with 3 steps
+  0%|          | 0/3 [00:00<?, ?it/s]
+[CONTAINER RESTART]
+```
+
+**Verificació:**
+Si després de reduir resolució/frames el workflow completa, era OOM.
+
+### Problema 4: Jupyter no arrenca
 
 **Causa:** Port 8888 ja en ús o runtime dir no writable.
 

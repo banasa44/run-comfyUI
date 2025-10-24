@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.3.66-final.2] - 2025-10-23
+
+### ✅ FIX CRÍTIC: ONNX Runtime GPU
+
+#### 3. Workflow crash al 58% sense error - RESOLT
+
+- **Problema**: WanVideo i altres models crashejaven al mig del sampling sense error visible a UI
+- **Símptoma**: Warnings `No module named 'onnxruntime'`, DWPose usava CPU en comptes de GPU
+- **Causa**: **onnxruntime-gpu NO estava instal·lat**, molts custom nodes el necessiten
+- **Solució**: Afegit `onnxruntime-gpu==1.23.2` al Dockerfile
+- **Resultat**: Acceleració GPU per ONNX models, no més crashes silenciosos
+
+**Afecta:**
+
+- ✅ WanVideo sampler
+- ✅ DWPose / ControlNet Aux
+- ✅ FantasyPortrait nodes
+- ✅ Qualsevol node que usi ONNX Runtime
+
+**Dependencies noves:**
+
+```
+✅ onnx: 1.19.1
+✅ onnxruntime-gpu: 1.23.2 (300MB - inclou CUDA providers)
+```
+
+---
+
 ## [v0.3.66-final] - 2025-10-23
 
 ### ✅ FIXES MAJORS

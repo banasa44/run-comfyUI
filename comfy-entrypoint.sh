@@ -2,33 +2,23 @@
 set -euo pipefail
 
 # ========================================================================
-# Hardcoded paths and ports (no env overrides)
+# ComfyUI entrypoint - inspired by ComfyUI_with_Flux
 # ========================================================================
+
 WORKSPACE=/workspace
 COMFY_DIR=$WORKSPACE/ComfyUI
-HF_HOME=$WORKSPACE/.cache/huggingface
-TORCH_HOME=$WORKSPACE/.cache/torch
-PIP_CACHE_DIR=$WORKSPACE/.cache/pip
 LOG_DIR=$WORKSPACE/logs
 
-COMFYUI_PORT=8188
-JUPYTER_PORT=8888
-
 # Export cache directories
-export HF_HOME
-export TORCH_HOME
-export PIP_CACHE_DIR
-
-# Prevent interactive git prompts
+export HF_HOME=$WORKSPACE/.cache/huggingface
+export TORCH_HOME=$WORKSPACE/.cache/torch
+export PIP_CACHE_DIR=$WORKSPACE/.cache/pip
 export GIT_TERMINAL_PROMPT=0
 
-# ========================================================================
-# Behavior environment variables (with defaults)
-# ========================================================================
-COMFYUI_BRANCH="${COMFYUI_BRANCH:-v0.3.66}"
+# Behavior environment variables
 COMFYUI_AUTO_UPDATE="${COMFYUI_AUTO_UPDATE:-false}"
-COMFYUI_FORCE_REINSTALL="${COMFYUI_FORCE_REINSTALL:-false}"
 JUPYTER_TOKEN="${JUPYTER_TOKEN:-}"
+HF_TOKEN="${HF_TOKEN:-}"
 
 # ========================================================================
 # Setup logging
@@ -37,230 +27,146 @@ mkdir -p "$LOG_DIR"
 exec 3>>"$LOG_DIR/entrypoint.log"
 echo "[$(date -Is)] ============================================" >&3
 echo "[$(date -Is)] ENTRYPOINT START" >&3
-echo "[$(date -Is)] COMFYUI_BRANCH=$COMFYUI_BRANCH" >&3
 echo "[$(date -Is)] COMFYUI_AUTO_UPDATE=$COMFYUI_AUTO_UPDATE" >&3
-echo "[$(date -Is)] Python: $(which python)  Pip: $(which pip)" >&3
+echo "[$(date -Is)] HF_TOKEN set: $([ -n "$HF_TOKEN" ] && echo 'yes' || echo 'no')" >&3
 git lfs install || true
 echo "[$(date -Is)] ============================================" >&3
 
 # ========================================================================
-# Helper function for resilient git cloning
+# HuggingFace authentication (if token provided)
 # ========================================================================
-try_clone() {
-  local url="$1" dir="$2" branch="${3:-}"
-  local clone_args="--depth=1"
-  [ -n "$branch" ] && clone_args="$clone_args --branch $branch"
-  
-  for i in {1..3}; do
-    git clone $clone_args "$url" "$dir" && return 0
-    echo "[$(date -Is)] Clone attempt $i failed, retrying..." >&3
-    sleep 2
-  done
-  echo "[$(date -Is)] ERROR: failed to clone $url after 3 attempts" >&3
-  return 1
-}
-
-# ========================================================================
-# Start JupyterLab first (background) with optional token
-# ========================================================================
-# ---------- JUPYTER ----------
-echo "[$(date -Is)] Starting JupyterLab on 0.0.0.0:$JUPYTER_PORT" >&3
-
-# venv binary + runtime dir writable (avoid silent startup failures)
-JUPYTER_BIN=/opt/venv/bin/jupyter
-export JUPYTER_RUNTIME_DIR="$WORKSPACE/.jupyter_runtime"
-mkdir -p "$JUPYTER_RUNTIME_DIR"
-
-JUPYTER_ARGS=(
-  lab
-  --ServerApp.ip=0.0.0.0
-  --ServerApp.port="$JUPYTER_PORT"
-  --ServerApp.root_dir="$WORKSPACE"
-  --ServerApp.allow_origin='*'
-  --ServerApp.allow_remote_access=true
-  --ServerApp.base_url=/
-  --allow-root
-)
-
-# optional token
-if [ -n "${JUPYTER_TOKEN:-}" ]; then
-  JUPYTER_ARGS+=( --ServerApp.token="$JUPYTER_TOKEN" )
-fi
-
-nohup "$JUPYTER_BIN" "${JUPYTER_ARGS[@]}" >> "$LOG_DIR/jupyter.log" 2>&1 &
-
-# healthcheck: wait until Jupyter listens (helps RunPod proxy avoid 502)
-for i in {1..30}; do
-  if ss -lnt | grep -q ":$JUPYTER_PORT "; then
-    echo "[$(date -Is)] Jupyter is listening on port $JUPYTER_PORT" >&3
-    break
-  fi
-  sleep 1
-done
-
-# ========================================================================
-# Adopt existing ComfyUI state from volume (case/legacy paths)
-# ========================================================================
-adopt_existing_state() {
-  # If target is a non-git directory (bad state), wipe and adopt later
-  if [ -d "$COMFY_DIR" ] && [ ! -d "$COMFY_DIR/.git" ] && [ -z "$(ls -A "$COMFY_DIR" 2>/dev/null)" ]; then
-    rm -rf "$COMFY_DIR"
-  fi
-
-  if [ ! -d "$COMFY_DIR" ]; then
-    # Look for likely candidates (ignore our target)
-    local cand
-    cand="$(find /workspace -maxdepth 2 -type d -iname 'comfyui' ! -path "$COMFY_DIR" 2>/dev/null | head -n1)"
-    if [ -n "$cand" ]; then
-      echo "[$(date -Is)] Adopting existing ComfyUI from: $cand" >&3
-      mkdir -p "$(dirname "$COMFY_DIR")"
-      # Prefer moving to keep inode history; fallback to rsync if cross-device
-      mv "$cand" "$COMFY_DIR" 2>/dev/null || rsync -a "$cand"/ "$COMFY_DIR"/
-    fi
-  fi
-
-  # If Manager exists elsewhere, copy it in
-  if [ ! -d "$COMFY_DIR/custom_nodes/ComfyUI-Manager" ]; then
-    local mgr
-    mgr="$(find /workspace -maxdepth 3 -type d -name 'ComfyUI-Manager' 2>/dev/null | head -n1)"
-    if [ -n "$mgr" ]; then
-      echo "[$(date -Is)] Importing existing ComfyUI-Manager from: $mgr" >&3
-      mkdir -p "$COMFY_DIR/custom_nodes"
-      rsync -a "$mgr"/ "$COMFY_DIR/custom_nodes/ComfyUI-Manager"/
-    fi
-  fi
-}
-adopt_existing_state
-
-# ========================================================================
-# Ensure ComfyUI repository
-# ========================================================================
-if [ ! -d "$COMFY_DIR/.git" ]; then
-  echo "[$(date -Is)] Cloning ComfyUI (branch: $COMFYUI_BRANCH)" >&3
-  try_clone "https://github.com/comfyanonymous/ComfyUI.git" "$COMFY_DIR" "$COMFYUI_BRANCH" || exit 1
-else
-  echo "[$(date -Is)] ComfyUI already exists at $COMFY_DIR" >&3
-  if [ "$COMFYUI_AUTO_UPDATE" = "true" ]; then
-    echo "[$(date -Is)] Auto-update enabled, pulling latest changes" >&3
-    git -C "$COMFY_DIR" fetch --depth=1 origin "$COMFYUI_BRANCH" || true
-    git -C "$COMFY_DIR" checkout "$COMFYUI_BRANCH" || true
-    git -C "$COMFY_DIR" pull --ff-only || true
-  fi
+if [ -n "$HF_TOKEN" ] && [ "$HF_TOKEN" != "enter_your_huggingface_token_here" ]; then
+  echo "[$(date -Is)] HF_TOKEN provided, logging in to HuggingFace..." >&3
+  python -c "from huggingface_hub import login; login(token='${HF_TOKEN}')" 2>&1 | tee -a "$LOG_DIR/entrypoint.log" || {
+    echo "[$(date -Is)] WARNING: HuggingFace login failed" >&3
+  }
 fi
 
 # ========================================================================
-# Install ComfyUI requirements if changed
+# Handle workspace persistence with robust approach (like the 3rd party)
 # ========================================================================
-REQ_FILE="$COMFY_DIR/requirements.txt"
-REQ_MARK="$WORKSPACE/.state/comfyui-reqs.installed"
+mkdir -p "$WORKSPACE"
 
-install_requirements_if_needed() {
-  mkdir -p "$WORKSPACE/.state"
-  local new_sum old_sum
-  new_sum="$(sha256sum "$REQ_FILE" | awk '{print $1}')"
-  if [ -f "$REQ_MARK" ]; then old_sum="$(cat "$REQ_MARK")"; else old_sum=""; fi
-  
-  # Force reinstall if requested (useful for fixing broken volumes)
-  if [ "$COMFYUI_FORCE_REINSTALL" = "true" ]; then
-    echo "[$(date -Is)] COMFYUI_FORCE_REINSTALL=true - forcing requirements reinstall" >&3
-    old_sum=""
-  fi
-  
-  if [ "$new_sum" != "$old_sum" ]; then
-    echo "[$(date -Is)] Installing ComfyUI requirements (also to STDOUT)" >&3
-    echo "[$(date -Is)] Using Python: $(which python) (version: $(python --version))" >&3
-    echo "[$(date -Is)] Using Pip: $(which pip) (version: $(pip --version))" >&3
-    
-    if ! python -m pip install --no-cache-dir -r "$REQ_FILE" 2>&1 | tee -a "$LOG_DIR/pip_install.log"; then
-      echo "[$(date -Is)] ERROR: pip install failed! Check $LOG_DIR/pip_install.log" >&3
-      echo "[$(date -Is)] Attempting to show last 20 lines of error:" >&3
-      tail -n 20 "$LOG_DIR/pip_install.log" >&3
-      exit 1
-    fi
-    
-    echo "$new_sum" > "$REQ_MARK"
-    echo "[$(date -Is)] Requirements installed successfully" >&3
+if [ ! -d "$COMFY_DIR" ]; then
+  # First run: move image ComfyUI to workspace
+  if [ -d "/ComfyUI" ]; then
+    echo "[$(date -Is)] First run: moving /ComfyUI to /workspace/ComfyUI" >&3
+    mv /ComfyUI "$COMFY_DIR"
   else
-    echo "[$(date -Is)] Requirements unchanged; skipping install." >&3
+    echo "[$(date -Is)] ERROR: /ComfyUI not found in image!" >&3
+    exit 1
   fi
-}
-
-if [ -f "$REQ_FILE" ]; then
-  install_requirements_if_needed
 else
-  echo "[$(date -Is)] WARNING: $REQ_FILE not found; skipping core deps." >&3
+  # Subsequent runs: ALWAYS recreate symlink (robust approach)
+  echo "[$(date -Is)] ComfyUI already exists in workspace" >&3
+  rm -rf /ComfyUI 2>/dev/null || true
+  ln -s "$COMFY_DIR" /ComfyUI
+  echo "[$(date -Is)] Recreated symlink /ComfyUI -> $COMFY_DIR" >&3
 fi
 
-# ========================================================================
-# Verify critical dependencies (prevent RunPod startup failures)
-# ========================================================================
-echo "[$(date -Is)] Verifying Python environment..." >&3
-if ! python -c "import torch, torchvision; print(f'PyTorch {torch.__version__}')" 2>/dev/null; then
-  echo "[$(date -Is)] ERROR: PyTorch not found in venv!" >&3
-  exit 1
+# Auto-update if enabled
+if [ "$COMFYUI_AUTO_UPDATE" = "true" ] && [ -d "$COMFY_DIR/.git" ]; then
+  echo "[$(date -Is)] Auto-update enabled, pulling latest changes" >&3
+  git -C "$COMFY_DIR" pull --ff-only || true
 fi
-echo "[$(date -Is)] Python environment OK" >&3
 
-# ========================================================================
 # Ensure ComfyUI directories
 # ========================================================================
-echo "[$(date -Is)] Ensuring ComfyUI directory structure" >&3
 mkdir -p "$COMFY_DIR/models" \
          "$COMFY_DIR/input" \
          "$COMFY_DIR/output" \
          "$COMFY_DIR/custom_nodes"
 
 # ========================================================================
-# Bootstrap minimal custom nodes
+# Custom nodes installation (minimal set - more can be added via Manager)
 # ========================================================================
-declare -A NODES=(
-  ["ComfyUI-Manager"]="https://github.com/ltdrdata/ComfyUI-Manager"
-  ["comfyui_controlnet_aux"]="https://github.com/Fannovel16/comfyui_controlnet_aux"
-  ["ComfyUI-Impact-Pack"]="https://github.com/ltdrdata/ComfyUI-Impact-Pack"
-  ["ComfyUI-Impact-Subpack"]="https://github.com/ltdrdata/ComfyUI-Impact-Subpack"
+# Most nodes are already in the image from builder stage
+# Only install additional ones if needed at runtime
+
+# ========================================================================
+# Support for customizable startup script (user can override behavior)
+# ========================================================================
+if [ ! -f "$WORKSPACE/start_user.sh" ]; then
+  echo "[$(date -Is)] Creating default start_user.sh" >&3
+  cat > "$WORKSPACE/start_user.sh" << 'EOF'
+#!/bin/bash
+# User-customizable startup script
+# This file persists across container restarts
+# Add your custom initialization here
+
+echo "Running default user startup script..."
+
+# Example: Download additional models
+# wget -O /workspace/ComfyUI/models/checkpoints/my_model.safetensors "https://..."
+
+# Example: Install additional custom nodes
+# cd /workspace/ComfyUI/custom_nodes
+# git clone https://github.com/user/custom-node
+# pip install -r custom-node/requirements.txt
+
+echo "User startup script completed"
+EOF
+  chmod +x "$WORKSPACE/start_user.sh"
+fi
+
+# ========================================================================
+# Start JupyterLab
+# ========================================================================
+echo "[$(date -Is)] Starting JupyterLab on port 8888" >&3
+
+JUPYTER_ARGS=(
+  lab
+  --ip=0.0.0.0
+  --port=8888
+  --no-browser
+  --allow-root
+  --NotebookApp.allow_origin='*'
+  --ServerApp.root_dir="$WORKSPACE"
 )
 
-for NODE_NAME in "${!NODES[@]}"; do
-  NODE_URL="${NODES[$NODE_NAME]}"
-  NODE_DIR="$COMFY_DIR/custom_nodes/$NODE_NAME"
-  
-  if [ ! -d "$NODE_DIR/.git" ]; then
-    echo "[$(date -Is)] Installing $NODE_NAME" >&3
-    if try_clone "$NODE_URL" "$NODE_DIR"; then
-      # Install requirements if present
-      if [ -f "$NODE_DIR/requirements.txt" ] && [ ! -f "$NODE_DIR/.installed" ]; then
-        echo "[$(date -Is)] Installing requirements for $NODE_NAME" >&3
-        python -m pip install --no-cache-dir -r "$NODE_DIR/requirements.txt" && \
-          touch "$NODE_DIR/.installed"
-      fi
-    else
-      echo "[$(date -Is)] WARNING: Failed to clone $NODE_NAME, skipping" >&3
-    fi
-  else
-    echo "[$(date -Is)] $NODE_NAME already exists" >&3
-    if [ "$COMFYUI_AUTO_UPDATE" = "true" ]; then
-      echo "[$(date -Is)] Auto-update enabled, updating $NODE_NAME" >&3
-      git -C "$NODE_DIR" pull --ff-only || true
-      
-      # Reinstall requirements if they changed
-      if [ -f "$NODE_DIR/requirements.txt" ]; then
-        echo "[$(date -Is)] Updating requirements for $NODE_NAME" >&3
-        python -m pip install --no-cache-dir -r "$NODE_DIR/requirements.txt" || true
-      fi
-    fi
-  fi
-done
+# Optional token
+if [ -n "${JUPYTER_TOKEN:-}" ]; then
+  JUPYTER_ARGS+=( --NotebookApp.token="$JUPYTER_TOKEN" )
+else
+  echo "[$(date -Is)] WARNING: No JUPYTER_TOKEN set, using default token" >&3
+fi
+
+jupyter "${JUPYTER_ARGS[@]}" >> "$LOG_DIR/jupyter.log" 2>&1 &
+echo "[$(date -Is)] JupyterLab started (logs: $LOG_DIR/jupyter.log)" >&3
+
+# ========================================================================
+# Execute user customization script
+# ========================================================================
+if [ -f "$WORKSPACE/start_user.sh" ]; then
+  echo "[$(date -Is)] Executing user startup script..." >&3
+  bash "$WORKSPACE/start_user.sh" 2>&1 | tee -a "$LOG_DIR/entrypoint.log" || {
+    echo "[$(date -Is)] WARNING: User script failed, continuing anyway" >&3
+  }
+fi
 
 # ========================================================================
 # Launch ComfyUI
 # ========================================================================
 cd "$COMFY_DIR"
-echo "[$(date -Is)] Starting ComfyUI on 0.0.0.0:$COMFYUI_PORT" >&3
-echo "[$(date -Is)] ============================================" >&3
+echo "[$(date -Is)] Starting ComfyUI on port 8188" >&3
+echo "[$(date -Is)] Working directory: $(pwd)" >&3
+
+# Log GPU info if available
+if command -v nvidia-smi &> /dev/null; then
+  echo "[$(date -Is)] GPU Info:" >&3
+  nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>&1 | tee -a "$LOG_DIR/entrypoint.log" || true
+  echo "[$(date -Is)] CUDA Version:" >&3
+  nvcc --version 2>&1 | grep "release" | tee -a "$LOG_DIR/entrypoint.log" || echo "nvcc not available (runtime image)" | tee -a "$LOG_DIR/entrypoint.log"
+else
+  echo "[$(date -Is)] WARNING: nvidia-smi not found, GPU may not be available" >&3
+fi
+
+# Log Python environment
+echo "[$(date -Is)] Python: $(python --version 2>&1)" >&3
+echo "[$(date -Is)] PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>&1)" >&3
+echo "[$(date -Is)] CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())' 2>&1)" >&3
 
 exec python main.py \
   --listen 0.0.0.0 \
-  --port "$COMFYUI_PORT" \
-  --enable-cors-header \
-  --output-directory "$COMFY_DIR/output" \
-  --input-directory "$COMFY_DIR/input"
+  --port 8188 \
+  --enable-cors-header

@@ -1,41 +1,44 @@
-# ========= Builder (CUDA 12.1 to avoid driver mismatch on RunPod) =========
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS builder
+# ========= Builder (CUDA 12.4 for better compatibility) =========
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04 AS builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-dev python-is-python3 \
-    git git-lfs curl ca-certificates build-essential ffmpeg \
-    libgl1 libglib2.0-0 libsqlite3-0 \
+    python3 python3-pip python3-venv python-is-python3 \
+    git git-lfs curl ca-certificates build-essential ffmpeg wget zip unzip \
+    libgl1 libglib2.0-0 libsqlite3-0 pkg-config libcairo2-dev \
   && rm -rf /var/lib/apt/lists/*
 
 # Create Python virtual environment
 ENV VENV_PATH=/opt/venv
-RUN python3.11 -m venv ${VENV_PATH}
+RUN python3 -m venv ${VENV_PATH}
 ENV PATH="${VENV_PATH}/bin:${PATH}"
 
 # Upgrade pip/wheel
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch cu121 from official index
+# Install PyTorch with CUDA 12.4 from official index
 RUN python -m pip install --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cu121 \
+    --index-url https://download.pytorch.org/whl/cu124 \
     torch torchvision torchaudio
 
-# Install essential packages + JupyterLab
+# Install essential packages + JupyterLab + ONNX Runtime GPU
 RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab tqdm \
-    safetensors aiohttp onnx imageio-ffmpeg
+    safetensors aiohttp onnx onnxruntime-gpu imageio-ffmpeg
 
-# Clone ComfyUI and install ALL official requirements (prevent missing deps)
+# Upgrade albumentations to avoid runtime warnings
+RUN python -m pip install --no-cache-dir -U albumentations
+
+# Clone ComfyUI and install ALL official requirements (keep in builder!)
 ARG COMFYUI_COMMIT=560b1bdfca77d9441ca2924fd9d6baa8dda05cd7
-RUN git clone https://github.com/comfyanonymous/ComfyUI.git /tmp/comfyui && \
-    cd /tmp/comfyui && \
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI && \
+    cd /ComfyUI && \
     git checkout ${COMFYUI_COMMIT} && \
     python -m pip install --no-cache-dir -r requirements.txt && \
-    rm -rf /tmp/comfyui
+    mkdir -p /ComfyUI/pysssss-workflows
 
 # --- Optional SageAttention (enable via build-arg) ---
 ARG ENABLE_SAGEATTENTION=false
@@ -43,8 +46,17 @@ RUN if [ "$ENABLE_SAGEATTENTION" = "true" ]; then \
       python -m pip install --no-cache-dir "sageattention==1.0.6" || true ; \
     fi
 
-# ========= Runtime (CUDA 12.1 runtime) =========
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS runtime
+# Pre-install only essential custom nodes (rest can be installed via ComfyUI-Manager)
+RUN set -eux; cd /ComfyUI/custom_nodes; \
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git; \
+    git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git; \
+    pip install --no-cache-dir -r ComfyUI-WanVideoWrapper/requirements.txt
+
+# Prune git histories to reduce image size
+RUN find /ComfyUI -name .git -type d -prune -exec rm -rf {} +
+
+# ========= Runtime (CUDA 12.4 runtime) =========
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04 AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -55,10 +67,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install minimal system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3-pip \
-    git git-lfs curl ca-certificates ffmpeg \
+    python3 python3-pip python3-venv python-is-python3 \
+    git git-lfs curl ca-certificates ffmpeg wget zip unzip vim \
     libgl1 libglib2.0-0 libsqlite3-0 \
-    build-essential gcc g++ make python3.11-dev \
+    build-essential gcc g++ make \
     iproute2 rsync \
   && rm -rf /var/lib/apt/lists/*
 
@@ -69,10 +81,16 @@ RUN git lfs install
 
 # Install uv for ComfyUI Manager compatibility
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    ln -sf /root/.local/bin/uv /usr/local/bin/uv || true
+    if [ -f "/root/.local/bin/uv" ]; then ln -sf /root/.local/bin/uv /usr/local/bin/uv; fi && \
+    if [ -f "/root/.cargo/bin/uv" ]; then ln -sf /root/.cargo/bin/uv /usr/local/bin/uv; fi && \
+    uv --version || true
 
-# Copy precompiled venv from builder
+# CUDA path and ensure venv binaries are preferred
+ENV PATH="/opt/venv/bin:/usr/local/cuda/bin:${PATH}"
+
+# Copy precompiled venv AND ComfyUI from builder
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /ComfyUI /ComfyUI
 ENV PATH="/opt/venv/bin:${PATH}"
 
 # Create cache and log directories

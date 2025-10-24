@@ -1,10 +1,15 @@
 # ComfyUI Docker Images for RunPod
 
-Production-ready Docker images for ComfyUI on RunPod with **ZERO ModuleNotFoundError**, optimal GPU support, and JupyterLab.
+Production-ready Docker images for ComfyUI on RunPod with **robust architecture** inspired by ComfyUI_with_Flux, ZERO ModuleNotFoundError, optimal GPU support, and JupyterLab.
 
 ## ✅ Status
 
-🎉 **100% Functional** - Totes les dependencies pre-instal·lades del `requirements.txt` oficial de ComfyUI.
+🎉 **100% Functional** - Architecture refactored to match production-proven ComfyUI_with_Flux patterns:
+
+- ✅ ComfyUI pre-built in image (not cloned at runtime)
+- ✅ Simple symlink approach for workspace persistence
+- ✅ Simplified JupyterLab startup (no complex healthchecks)
+- ✅ All dependencies pre-installed from official requirements.txt
 
 ## 🚀 Available Images
 
@@ -17,7 +22,7 @@ Production-ready Docker images for ComfyUI on RunPod with **ZERO ModuleNotFoundE
 
 ### ✅ Core Dependencies (Pre-installed)
 
-Totes les dependencies del **ComfyUI v0.3.66 requirements.txt**:
+All dependencies from **ComfyUI v0.3.66 requirements.txt** + extras:
 
 - ✅ scipy 1.16.2
 - ✅ einops 0.8.1
@@ -25,30 +30,33 @@ Totes les dependencies del **ComfyUI v0.3.66 requirements.txt**:
 - ✅ sentencepiece 0.2.1
 - ✅ kornia 0.8.1
 - ✅ spandrel 0.4.1
+- ✅ **onnx 1.19.1 + onnxruntime-gpu 1.23.2** (for WanVideo, DWPose, etc.)
 - ✅ torch, torchvision, torchaudio
 - ✅ safetensors, aiohttp, pyyaml, pillow
-- ✅ i **tots** els altres
+- ✅ And **all** others
 
 **No more `ModuleNotFoundError`!** 🎉
 
 ### 🛠️ Services
 
-- **ComfyUI** - Port `8188` (auto-clones v0.3.66)
-- **JupyterLab** - Port `8888` (amb `--allow-root`)
-- **ComfyUI-Manager** - Auto-instal·lat per gestió de custom nodes
+- **ComfyUI** - Port `8188` (pre-built v0.3.66 in image)
+- **JupyterLab** - Port `8888` (with `--allow-root`)
+- **ComfyUI-Manager** - Auto-installed for custom node management
 
-### Hardcoded Paths (Not Configurable)
+### Architecture Improvements
 
-```bash
-WORKSPACE=/workspace
-COMFY_DIR=/workspace/ComfyUI
-HF_HOME=/workspace/.cache/huggingface
-TORCH_HOME=/workspace/.cache/torch
-PIP_CACHE_DIR=/workspace/.cache/pip
-LOG_DIR=/workspace/logs
-```
+**Robust build pattern** (matches ComfyUI_with_Flux):
 
-**Note:** If you already have ComfyUI on your `/workspace` volume (e.g., under a different case or path like `/workspace/comfyUI`), the entrypoint will automatically adopt it and move it to `/workspace/ComfyUI`. If ComfyUI-Manager exists elsewhere on the volume, it will be imported into the custom_nodes directory.
+1. ComfyUI is built **inside the Docker image** (not cloned at runtime)
+2. First run: `/ComfyUI` → `/workspace/ComfyUI` (move to persistent storage)
+3. Subsequent runs: Symlink `/ComfyUI` → `/workspace/ComfyUI`
+4. Simple JupyterLab startup (no complex healthchecks)
+
+**Benefits:**
+
+- Faster startup (no git clone on every fresh pod)
+- More reliable (pre-tested dependencies)
+- Simpler debugging (less moving parts)
 
 ## 🎯 Quick Start
 
@@ -65,11 +73,13 @@ GPU: RTX 4090 (or compatible)
 ### 2. Environment Variables
 
 ```bash
-# Opcionals (tots tenen defaults)
-COMFYUI_BRANCH=v0.3.66              # Per defecte
-COMFYUI_AUTO_UPDATE=false           # Recomanat: false
-COMFYUI_FORCE_REINSTALL=true        # Primera vegada amb volum existent
-JUPYTER_TOKEN=my-secret-token       # Recomanat per seguretat
+# Optional (all have defaults)
+COMFYUI_AUTO_UPDATE=false           # Recommended: false (ComfyUI is pre-built in image)
+JUPYTER_TOKEN=my-secret-token       # Recommended for security
+
+# For heavy workflows (avoid OOM)
+PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+CUDA_LAUNCH_BLOCKING=1              # Debug mode (slower, more stable)
 ```
 
 ### 3. Access

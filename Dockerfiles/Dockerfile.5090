@@ -8,12 +8,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFYUI_AUTO_UPDATE=false \
     PYTHONUNBUFFERED=1
 
-# Install system packages including Python 3.11
+# Install system packages including Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-dev python-is-python3 python3-pip \
-    git git-lfs curl ca-certificates ffmpeg \
+    python3 python3-pip python3-venv python-is-python3 \
+    git git-lfs curl ca-certificates ffmpeg wget zip unzip vim \
     libgl1 libglib2.0-0 libsqlite3-0 \
-    build-essential gcc g++ make \
+    build-essential gcc g++ make pkg-config libcairo2-dev \
     iproute2 rsync \
   && rm -rf /var/lib/apt/lists/*
 
@@ -24,11 +24,16 @@ RUN git lfs install
 
 # Install uv for ComfyUI Manager compatibility
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    ln -sf /root/.local/bin/uv /usr/local/bin/uv || true
+    if [ -f "/root/.local/bin/uv" ]; then ln -sf /root/.local/bin/uv /usr/local/bin/uv; fi && \
+    if [ -f "/root/.cargo/bin/uv" ]; then ln -sf /root/.cargo/bin/uv /usr/local/bin/uv; fi && \
+    uv --version || true
+
+# CUDA path and ensure venv binaries are preferred
+ENV PATH="${VENV_PATH}/bin:/usr/local/cuda/bin:${PATH}"
 
 # Create and activate virtual environment
 ENV VENV_PATH=/opt/venv
-RUN python3.11 -m venv ${VENV_PATH}
+RUN python3 -m venv ${VENV_PATH}
 ENV PATH="${VENV_PATH}/bin:${PATH}"
 
 # Upgrade pip/wheel
@@ -41,24 +46,36 @@ RUN python -m pip install --no-cache-dir \
     --index-url ${TORCH_INDEX_URL} \
     torch torchvision torchaudio
 
-# Install essential packages + JupyterLab
+# Install essential packages + JupyterLab + ONNX Runtime GPU
 RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab tqdm \
-    safetensors aiohttp onnx imageio-ffmpeg
+    safetensors aiohttp onnx onnxruntime-gpu imageio-ffmpeg
 
-# Clone ComfyUI and install ALL official requirements (prevent missing deps)
+# Upgrade albumentations to avoid runtime warnings
+RUN python -m pip install --no-cache-dir -U albumentations
+
+# Clone ComfyUI and install ALL official requirements (keep it!)
 ARG COMFYUI_COMMIT=560b1bdfca77d9441ca2924fd9d6baa8dda05cd7
-RUN git clone https://github.com/comfyanonymous/ComfyUI.git /tmp/comfyui && \
-    cd /tmp/comfyui && \
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI && \
+    cd /ComfyUI && \
     git checkout ${COMFYUI_COMMIT} && \
     python -m pip install --no-cache-dir -r requirements.txt && \
-    rm -rf /tmp/comfyui
+    mkdir -p /ComfyUI/pysssss-workflows
 
 # --- Optional SageAttention (enable via build-arg) ---
 ARG ENABLE_SAGEATTENTION=false
 RUN if [ "$ENABLE_SAGEATTENTION" = "true" ]; then \
       python -m pip install --no-cache-dir "sageattention==1.0.6" || true ; \
     fi
+
+# Pre-install only essential custom nodes (rest can be installed via ComfyUI-Manager)
+RUN set -eux; cd /ComfyUI/custom_nodes; \
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git; \
+    git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git; \
+    pip install --no-cache-dir -r ComfyUI-WanVideoWrapper/requirements.txt
+
+# Prune git histories to reduce image size
+RUN find /ComfyUI -name .git -type d -prune -exec rm -rf {} +
 
 # Create cache and log directories
 RUN mkdir -p /workspace/.cache/huggingface \
