@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git git-lfs curl ca-certificates ffmpeg wget zip unzip vim \
     libgl1 libglib2.0-0 libsqlite3-0 \
     build-essential gcc g++ make pkg-config libcairo2-dev \
-    iproute2 rsync \
+    iproute2 rsync ncdu \
   && rm -rf /var/lib/apt/lists/*
 
 ENV CC=/usr/bin/gcc CXX=/usr/bin/g++
