@@ -1,5 +1,5 @@
-# ========= Single-stage build (avoids disk space issues on GitHub Actions) =========
-FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04
+# ========= Use devel image for FlashAttention compilation =========
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -39,12 +39,11 @@ ENV PATH="${VENV_PATH}/bin:${PATH}"
 # Upgrade pip/wheel
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch with ARG for flexible CUDA version
-# Default: cu128, can override with --build-arg TORCH_INDEX_URL=...
+# Install PyTorch 2.8.1 specifically for RTX 5090 + TorchCompile + Triton compatibility
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 RUN python -m pip install --no-cache-dir \
     --index-url ${TORCH_INDEX_URL} \
-    torch torchvision torchaudio
+    torch==2.8.1 torchvision torchaudio
 
 # Install essential packages + JupyterLab + ONNX Runtime GPU
 RUN python -m pip install --no-cache-dir \
@@ -62,8 +61,17 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt && \
     mkdir -p /ComfyUI/pysssss-workflows
 
-# Install SageAttention for improved performance
-RUN python -m pip install --no-cache-dir "sageattention==1.0.6" || true
+# Install performance optimizations for RTX 5090
+# Triton 3.0.0 specifically (not auto-installed version)
+RUN python -m pip install --no-cache-dir triton==3.0.0
+
+# SageAttention for optimized attention
+RUN python -m pip install --no-cache-dir sageattention==1.0.6 || true
+
+# FlashAttention 3.0 beta (requires compilation)
+RUN python -m pip install --no-cache-dir \
+    flash-attn==3.0.0b1 --no-build-isolation || \
+    echo "FlashAttention install failed, skipping (may need devel image)"
 
 # Pre-install only essential custom nodes (rest can be installed via ComfyUI-Manager)
 RUN set -eux; cd /ComfyUI/custom_nodes; \
