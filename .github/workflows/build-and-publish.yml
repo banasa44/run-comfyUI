@@ -17,11 +17,6 @@ jobs:
         target:
           - { file: Dockerfiles/Dockerfile.4090, tag: 4090, build_args: '' }
           - { file: Dockerfiles/Dockerfile.5090, tag: 5090, build_args: '' }
-          - {
-              file: Dockerfiles/Dockerfile.5090,
-              tag: 5090-cu126,
-              build_args: 'TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126',
-            }
     steps:
       - uses: actions/checkout@v4
 

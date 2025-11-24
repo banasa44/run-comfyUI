@@ -68,8 +68,10 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI && \
 RUN python -m pip install --no-cache-dir triton==3.5.1
 
 # SageAttention 2.2.0 for optimized attention (required by WanVideoWrapper)
-# Set TORCH_CUDA_ARCH_LIST for RTX 5090 (Blackwell=10.0) and Hopper (9.0)
-ENV TORCH_CUDA_ARCH_LIST="9.0 10.0"
+# Set TORCH_CUDA_ARCH_LIST for RTX 5090. Using 9.0 (Hopper) to reduce build time/memory usage on CI.
+# Blackwell (10.0) is backward compatible with Hopper (9.0) PTX.
+ENV TORCH_CUDA_ARCH_LIST="9.0"
+ENV MAX_JOBS=1
 RUN python -m pip install --no-cache-dir --no-build-isolation sageattention==2.2.0
 
 # Enable TCMalloc for better memory management
