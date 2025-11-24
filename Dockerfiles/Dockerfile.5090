@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev python-is-python3 \
     git git-lfs curl ca-certificates ffmpeg wget zip unzip vim \
-    libgl1 libglib2.0-0 libsqlite3-0 \
+    libgl1 libglib2.0-0 libsqlite3-0 libgoogle-perftools-dev \
     build-essential gcc g++ make pkg-config libcairo2-dev cmake ninja-build \
     iproute2 rsync ncdu \
   && rm -rf /var/lib/apt/lists/*
@@ -48,7 +48,9 @@ RUN python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUD
 # Install essential packages + JupyterLab + ONNX Runtime GPU
 RUN python -m pip install --no-cache-dir \
     requests numpy pillow opencv-python-headless jupyterlab tqdm \
-    safetensors aiohttp onnx onnxruntime-gpu imageio-ffmpeg
+    safetensors aiohttp onnx onnxruntime-gpu imageio-ffmpeg \
+    bitsandbytes accelerate scipy huggingface_hub \
+    jupyter-archive ipywidgets
 
 # Upgrade albumentations to avoid runtime warnings
 RUN python -m pip install --no-cache-dir -U albumentations
@@ -66,8 +68,12 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI && \
 RUN python -m pip install --no-cache-dir triton==3.5.1
 
 # SageAttention 2.2.0 for optimized attention (required by WanVideoWrapper)
-# Note: Requires torch to be installed first and CUDA dev tools for compilation
+# Set TORCH_CUDA_ARCH_LIST for RTX 5090 (Blackwell=10.0) and Hopper (9.0)
+ENV TORCH_CUDA_ARCH_LIST="9.0 10.0"
 RUN python -m pip install --no-cache-dir --no-build-isolation sageattention==2.2.0
+
+# Enable TCMalloc for better memory management
+ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4"
 
 # FlashAttention 3.0 beta (requires compilation with python3-dev/cmake/ninja)
 RUN python -m pip install --no-cache-dir \

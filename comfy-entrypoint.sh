@@ -172,6 +172,7 @@ fi
 echo "[$(date -Is)] Python: $(python --version 2>&1)" >&3
 echo "[$(date -Is)] PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>&1)" >&3
 echo "[$(date -Is)] CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())' 2>&1)" >&3
+echo "[$(date -Is)] LD_PRELOAD: ${LD_PRELOAD:-not set}" >&3
 
 exec python main.py \
   --listen 0.0.0.0 \
